@@ -129,6 +129,13 @@ public class ProjetMapReduce {
     }
 
 	public static void main(String[] args) throws Exception {
+	    if(args.length < 5){
+		System.out.println("Il vous manque des arguments ! Lancez donc comme ça : "
+				   + "\nyarn jar fichier_entree dossier_sortie nombre_de_clusters"
+				   + " colonne1 colonne2...");
+		return;
+	    }
+	    
 	    int dimension = args.length - 3;
 	    String[] columns = new String[dimension];
 
