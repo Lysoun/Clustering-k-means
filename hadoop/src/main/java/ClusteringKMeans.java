@@ -21,10 +21,11 @@ import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.mapred.TextOutputFormat;
 
 public class ClusteringKMeans {
-    public static String JOB_NAME = "ClusteringKMeans";
+    public final static String JOB_NAME = "ClusteringKMeans";
+    public final static Double EPSILON = 0.1;
     
     private static List<List<Double>> centroids = new ArrayList<List<Double>>();
-    private static List<List<Double>> new_centroids = new ArrayList<List<Double>>();
+    private static List<List<Double>> newCentroids = new ArrayList<List<Double>>();
     private static int iteration = 0;
     private static int clusterNumber = 1;
     private static int dimension = 1;
@@ -92,12 +93,12 @@ public class ClusteringKMeans {
 	public static int searchNearestCentroid(List<Double> vector, int clusterNumber){
 	    int indexNearest = 0;
 	    
-	    Double diffMin = norm_difference(centroids.get(0), vector);
+	    Double diffMin = normDifference(centroids.get(0), vector);
 	    
 	    for(int i = 0; i < clusterNumber; i++){
 		List<Double> centroid = centroids.get(i);
 		
-		Double diff = norm_difference(centroid, vector);
+		Double diff = normDifference(centroid, vector);
 		if(diff < diffMin){
 		    diffMin = diff;
 		    indexNearest = i;
@@ -111,7 +112,7 @@ public class ClusteringKMeans {
 	 * Computes the difference in the norms of
 	 * the two vectors given 
 	 */
-	private static Double norm_difference(List<Double> vector1, List<Double> vector2){
+	private static Double normDifference(List<Double> vector1, List<Double> vector2){
 	    Double res = 0.;
 	    
 	    // No need to check the dimensions of the vectors,
@@ -123,7 +124,9 @@ public class ClusteringKMeans {
 	    
 	    return Math.sqrt(res);
 	}
+
     }
+
     
     public static class ProjetReducer implements
 					  Reducer<IntWritable, Text, Text, IntWritable> {
@@ -133,11 +136,35 @@ public class ClusteringKMeans {
 	@Override
 	public void reduce(IntWritable key, Iterator<Text> values,
 			   OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException{
-	    // Computing the new center for this cluster
+	    List<Double> newCentroid = new ArrayList<Double>();
+	    Double numberValues = 0.;
 
-	    // Writing the values
-	    while(values.hasNext())
-		output.collect(values.next(), key);
+	    // Initialise newCentroid with zeroes !
+	    for(int i = 0; i < dimension; i++)
+		newCentroid.add(0.);
+	    
+	    
+	    while(values.hasNext()){
+		Text value = values.next();
+
+		// Adding the value's coordinates into the newCentroid
+		String tokens[] = value.toString().split(",");
+		for(int i = 0; i < dimension; i++)
+		    newCentroid.set(i,
+				    newCentroid.get(i) +
+				    Double.parseDouble(tokens[columns.get(i)]));
+		
+		numberValues = numberValues + 1.;
+		
+		// Writing the value
+		output.collect(value, key);
+	    }
+
+	    // Computing the mean for each column in newCentroid
+	    for(int i = 0; i < newCentroid.size(); i++)
+		newCentroid.set(i, newCentroid.get(i) / numberValues);
+
+	    newCentroids.add(newCentroid);
 	}
 
 	@Override
@@ -172,6 +199,7 @@ public class ClusteringKMeans {
 
 	// Iterating until convergence
 	boolean isDone = false;
+	ComparatorVectors comparator = new ComparatorVectors(EPSILON);
 
 	while(!isDone){
 	    JobConf jobConf = new JobConf(ClusteringKMeans.class);
@@ -179,8 +207,11 @@ public class ClusteringKMeans {
 	    FileInputFormat.addInputPath(jobConf, new Path(args[0]));
 	    FileOutputFormat.setOutputPath(jobConf, new Path(args[1]));
 
-	    JobClient.runJob(jobConf);
-	    isDone = true;
+	    JobClient.runJob(jobConf);	    
+	    isDone = compareCentroids(comparator);
+	    centroids = new ArrayList<List<Double>>(newCentroids);
+	    newCentroids.clear();
+	    
 	    ++iteration;
 	}		      
     }
@@ -195,5 +226,21 @@ public class ClusteringKMeans {
 	job.setOutputValueClass(IntWritable.class);
 	job.setOutputFormat(TextOutputFormat.class);
 	job.setInputFormat(TextInputFormat.class);	
+    }
+
+    public static boolean compareCentroids(ComparatorVectors comparator){
+	centroids.sort(comparator);
+	newCentroids.sort(comparator);
+
+	boolean res = true;
+	int i = 0;
+
+	while(res && i < dimension){
+	    if(comparator.compare(centroids.get(i), newCentroids.get(i)) != 0)
+		res = false;
+	    ++i;
+	}
+
+	return res;
     }
 }
