@@ -18,6 +18,7 @@ import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 public class ProjetMapReduce {
     private static List<List<Double>> centroids = new ArrayList<List<Double>>();
+    private static List<List<Double>> new_centroids = new ArrayList<List<Double>>();
     
     public static class ProjetMapper extends
 					 Mapper<Object, Text, IntWritable, Text> {
@@ -36,14 +37,16 @@ public class ProjetMapReduce {
 	
 	public void map(Object key, Text value, Context context)
 	    throws IOException, InterruptedException {
-	    // Let's check if the line has a float in its *column* column			
 	    String tokens[]= value.toString().split(",");
 	    
 	    for(Integer column : columns){
+		// Checking if the line does have floats in
+		// all the columns we are going to use
 		if(tokens.length < column) return;
 		if(!tokens[column].matches("-?\\d+(\\.\\d+)?")) return;	
 	    }			
-	    
+
+	    // Creating a vector to represent the line
 	    List<Double> valueVector = new ArrayList<Double>();
 	    
 	    for(Integer column : columns){
@@ -51,16 +54,23 @@ public class ProjetMapReduce {
 	    }
 	    
 	    if(centroids.size() < clusterNumber) {
+		// When there is not enough centroids, checking if
+		// this value is already a centroid
 		int index = centroids.indexOf(valueVector);
 		
 		if(index == -1){
+		    // When it's not, adding it
 		    centroids.add(valueVector);
 		    context.write(new IntWritable(centroids.size() - 1), value);				
 		} else{
+		    // When it is, just writting it and its cluster number
+		    // as its key
 		    context.write(new IntWritable(index), value);
 		}
 		
 	    } else{
+		// Looking for the nearest centroid to the value
+		// and writting the index of that centroid as the value's key
 		context.write(new IntWritable(Centroids.searchNearestCentroid(valueVector, clusterNumber)), value);
 	    }
 	    
@@ -68,18 +78,22 @@ public class ProjetMapReduce {
     }
     
     public static class Centroids{
-	
+
+	/**
+	 * Among centroids, searches the nearest to 
+	 * the vector given
+	 */
 	public static int searchNearestCentroid(List<Double> vector, int clusterNumber){
 	    int indexNearest = 0;
 	    
-	    Double normMin = norm(centroids.get(0), vector);
+	    Double diffMin = norm_difference(centroids.get(0), vector);
 	    
 	    for(int i = 0; i < clusterNumber; i++){
 		List<Double> centroid = centroids.get(i);
 		
-		Double norm = norm(centroid, vector);
-		if(norm < normMin){
-		    normMin = norm;
+		Double diff = norm_difference(centroid, vector);
+		if(diff < diffMin){
+		    diffMin = diff;
 		    indexNearest = i;
 		}
 	    }
@@ -87,11 +101,15 @@ public class ProjetMapReduce {
 	    return indexNearest;
 	}
 	
-	private static Double norm(List<Double> vector1, List<Double> vector2){
+	/**
+	 * Computes the difference in the norms of
+	 * the two vectors given 
+	 */
+	private static Double norm_difference(List<Double> vector1, List<Double> vector2){
 	    Double res = 0.;
 	    
-	    // Yes we have the correct number of dimensions for the two vectors.
-	    // It was checked in map okay.
+	    // No need to check the dimensions of the vectors,
+	    // it's assumed that they're correct
 	    
 	    for(int i = 0; i < vector1.size(); i++){
 		res += Math.pow(vector1.get(i) - vector2.get(i), 2.);
@@ -106,9 +124,12 @@ public class ProjetMapReduce {
 	
 	public void reduce(IntWritable key, Iterable<Text> values,
 			   Context context) throws IOException, InterruptedException {
+	    // Computing the new center for this cluster
+
+	    // Writing the values
 	    for(Text value : values){
 		context.write(value, key);
-			}
+	    }
 	}
     }
     
