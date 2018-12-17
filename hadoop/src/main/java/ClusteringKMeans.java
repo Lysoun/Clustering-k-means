@@ -7,36 +7,39 @@ import java.util.List;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.Mapper;
-import org.apache.hadoop.mapreduce.Reducer;
-import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
-import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.mapred.FileInputFormat;
+import org.apache.hadoop.mapred.FileOutputFormat;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.JobClient;
+import org.apache.hadoop.mapred.Mapper;
+import org.apache.hadoop.mapred.OutputCollector;
+import org.apache.hadoop.mapred.Reducer;
+import org.apache.hadoop.mapred.Reporter;
+import org.apache.hadoop.mapred.TextInputFormat;
+import org.apache.hadoop.mapred.TextOutputFormat;
 
-public class ProjetMapReduce {
+public class ClusteringKMeans {
+    public static String JOB_NAME = "ClusteringKMeans";
+    
     private static List<List<Double>> centroids = new ArrayList<List<Double>>();
     private static List<List<Double>> new_centroids = new ArrayList<List<Double>>();
+    private static int iteration = 0;
+    private static int clusterNumber = 1;
+    private static int dimension = 1;
+    private static List<Integer> columns = new ArrayList<Integer>();
     
-    public static class ProjetMapper extends
-					 Mapper<Object, Text, IntWritable, Text> {
-	private int clusterNumber = 1;
-	private int dimension = 1;
-	private List<Integer> columns = new ArrayList<Integer>();
-	
+    public static class ProjetMapper implements Mapper<LongWritable, Text, IntWritable, Text> {
 	@Override
-	protected void setup(Mapper<Object, Text, IntWritable, Text>.Context context)
-	    throws IOException, InterruptedException {
-	    this.clusterNumber = context.getConfiguration().getInt("clusterNumber", 1);
-	    this.dimension = context.getConfiguration().getInt("dimension", 1);
-	    this.columns = Parser.parseToInteger(context.getConfiguration().
-						 getStrings("columns"));
+	public void configure(JobConf job){
+	    // We need to implement this but
+	    // we do not have anything to do here...
 	}
-	
-	public void map(Object key, Text value, Context context)
-	    throws IOException, InterruptedException {
+
+	@Override
+	public void map(LongWritable key, Text value, OutputCollector<IntWritable, Text> output, Reporter reporter)
+	    throws IOException {
 	    String tokens[]= value.toString().split(",");
 	    
 	    for(Integer column : columns){
@@ -61,20 +64,23 @@ public class ProjetMapReduce {
 		if(index == -1){
 		    // When it's not, adding it
 		    centroids.add(valueVector);
-		    context.write(new IntWritable(centroids.size() - 1), value);				
+		    output.collect(new IntWritable(centroids.size() - 1), value);				
 		} else{
 		    // When it is, just writting it and its cluster number
 		    // as its key
-		    context.write(new IntWritable(index), value);
+		    output.collect(new IntWritable(index), value);
 		}
 		
 	    } else{
 		// Looking for the nearest centroid to the value
 		// and writting the index of that centroid as the value's key
-		context.write(new IntWritable(Centroids.searchNearestCentroid(valueVector, clusterNumber)), value);
+		output.collect(new IntWritable(Centroids.searchNearestCentroid(valueVector, clusterNumber)), value);
 	    }
 	    
 	}
+
+	@Override
+	public void close() throws IOException{}
     }
     
     public static class Centroids{
@@ -119,18 +125,23 @@ public class ProjetMapReduce {
 	}
     }
     
-    public static class ProjetReducer extends
+    public static class ProjetReducer implements
 					  Reducer<IntWritable, Text, Text, IntWritable> {
+	@Override
+	public void configure(JobConf job){ }
 	
-	public void reduce(IntWritable key, Iterable<Text> values,
-			   Context context) throws IOException, InterruptedException {
+	@Override
+	public void reduce(IntWritable key, Iterator<Text> values,
+			   OutputCollector<Text, IntWritable> output, Reporter reporter) throws IOException{
 	    // Computing the new center for this cluster
 
 	    // Writing the values
-	    for(Text value : values){
-		context.write(value, key);
-	    }
+	    while(values.hasNext())
+		output.collect(values.next(), key);
 	}
+
+	@Override
+	public void close(){ }
     }
     
     
@@ -146,38 +157,43 @@ public class ProjetMapReduce {
     }
 
     public static void run(String[] args) throws Exception{
+	// Getting and setting the configuration
 	int dimension = args.length - 3;
 	String[] columns = new String[dimension];
 
 	for(int i = 1; i <= dimension; i++){
 	    columns[i - 1] = args[i + 2];
 	}
-	
-	Configuration conf = new Configuration();
-	conf.setInt("clusterNumber", Integer.parseInt(args[2]));
-	conf.setStrings("columns", columns);
-	conf.setInt("dimension", dimension);
-	
-	Job job = Job.getInstance(conf, "ProjetMapReduce");
-	setJob(job);
-	
-	FileInputFormat.addInputPath(job, new Path(args[0]));
-	FileOutputFormat.setOutputPath(job, new Path(args[1]));
-	
-	System.exit(job.waitForCompletion(true) ? 0 : 1);
 
+	ClusteringKMeans.columns = Parser.parseToInteger(columns);
+	ClusteringKMeans.dimension = dimension;
+	ClusteringKMeans.clusterNumber = Integer.parseInt(args[2]);
+	
+
+	// Iterating until convergence
+	boolean isDone = false;
+
+	while(!isDone){
+	    JobConf jobConf = new JobConf(ClusteringKMeans.class);
+	    setJobConf(jobConf);
+	    FileInputFormat.addInputPath(jobConf, new Path(args[0]));
+	    FileOutputFormat.setOutputPath(jobConf, new Path(args[1]));
+
+	    JobClient.runJob(jobConf);
+	    isDone = true;
+	    ++iteration;
+	}		      
     }
 
-    public static void setJob(Job job){
-	job.setNumReduceTasks(1);
-	job.setJarByClass(ProjetMapReduce.class);
+    public static void setJobConf(JobConf job){
+	job.setJobName(JOB_NAME);
 	job.setMapperClass(ProjetMapper.class);
 	job.setMapOutputKeyClass(IntWritable.class);
 	job.setMapOutputValueClass(Text.class);
 	job.setReducerClass(ProjetReducer.class);
 	job.setOutputKeyClass(Text.class);
 	job.setOutputValueClass(IntWritable.class);
-	job.setOutputFormatClass(TextOutputFormat.class);
-	job.setInputFormatClass(TextInputFormat.class);	
+	job.setOutputFormat(TextOutputFormat.class);
+	job.setInputFormat(TextInputFormat.class);	
     }
 }
