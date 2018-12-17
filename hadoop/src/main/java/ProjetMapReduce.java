@@ -141,7 +141,11 @@ public class ProjetMapReduce {
 			       + " colonne1 colonne2...");
 	    return;
 	}
-	
+
+	run(args);
+    }
+
+    public static void run(String[] args) throws Exception{
 	int dimension = args.length - 3;
 	String[] columns = new String[dimension];
 
@@ -155,6 +159,16 @@ public class ProjetMapReduce {
 	conf.setInt("dimension", dimension);
 	
 	Job job = Job.getInstance(conf, "ProjetMapReduce");
+	setJob(job);
+	
+	FileInputFormat.addInputPath(job, new Path(args[0]));
+	FileOutputFormat.setOutputPath(job, new Path(args[1]));
+	
+	System.exit(job.waitForCompletion(true) ? 0 : 1);
+
+    }
+
+    public static void setJob(Job job){
 	job.setNumReduceTasks(1);
 	job.setJarByClass(ProjetMapReduce.class);
 	job.setMapperClass(ProjetMapper.class);
@@ -164,11 +178,6 @@ public class ProjetMapReduce {
 	job.setOutputKeyClass(Text.class);
 	job.setOutputValueClass(IntWritable.class);
 	job.setOutputFormatClass(TextOutputFormat.class);
-	job.setInputFormatClass(TextInputFormat.class);
-	
-	FileInputFormat.addInputPath(job, new Path(args[0]));
-	FileOutputFormat.setOutputPath(job, new Path(args[1]));
-	
-	System.exit(job.waitForCompletion(true) ? 0 : 1);
+	job.setInputFormatClass(TextInputFormat.class);	
     }
 }
