@@ -2,13 +2,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Parser{
-    public static List<Integer> parseToInteger(String[] arrayString){
-	List<Integer> listInteger = new ArrayList<Integer>();
+    public static int[] parseToInteger(String[] arrayString){
+	int res[] = new int[arrayString.length];
 	
-	for(String e : arrayString){
-	    listInteger.add(Integer.parseInt(e));
-	}
+	for(int i = 0; i < arrayString.length; i++)
+	    res[i] = Integer.parseInt(arrayString[i]);	
 	
-	return listInteger;
+	return res;
     }    
 }

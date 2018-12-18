@@ -3,7 +3,7 @@
   <groupId>bigdata</groupId>
   <artifactId>clustering-k-means</artifactId>
   <version>0.0.1</version>
-  <name>Minimal MapReduce app skeleton</name>
+  <name>Clustering k-means using Hadoop</name>
   <dependencies>
   	<dependency>
   		<groupId>org.apache.hadoop</groupId>
@@ -25,7 +25,7 @@
   			<configuration>
   				<archive>
   					<manifest>
-  						<mainClass>ClusteringKMeans</mainClass>
+  						<mainClass>Main</mainClass>
   					</manifest>
   				</archive>
   			</configuration>
