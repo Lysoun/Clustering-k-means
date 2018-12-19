@@ -18,11 +18,8 @@ public class Main{
 	String input = args[0];
 	int clusterNumber = Integer.parseInt(args[2]);
 
-	String outputCleaner = outputFolder + "-clean";
-
-	Cleaner.run(input, outputCleaner, dimension, columns);
-
 	String outputClustering = outputFolder + "-clustering";
-	//	ClusteringKMeans.run(outputCleaner + OUTPUT_FILE_NAME, outputClustering, dimension, columns, clusterNumber);
+	String centroidFolder = outputFolder + "-centroids";
+	ClusteringKMeans.run(input, outputClustering, centroidFolder, dimension, columns, clusterNumber);
     }
 }
