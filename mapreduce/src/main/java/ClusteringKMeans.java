@@ -20,18 +20,21 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.MultipleOutputs;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 public class ClusteringKMeans {
     private static final String CENTROID_FILE_NAME = "centroid.txt";
+    private static final String NEW_CENTROID_FILE_NAME = "newCentroids-r-00000";
     private static final String SPLITTER = ",";
                     
-    public static void run(String input, String outputFolder, String centroidFolder, int dimension, String[] columns, int clusterNumber) throws Exception{
+    public static void run(String input, String outputFolder, String centroidFolder, int dimension, String[] columns, int clusterNumber, int iterationsNumber) throws Exception{
 	int iteration = 0;
 	
 	// Setting the configuration for the job
@@ -40,32 +43,46 @@ public class ClusteringKMeans {
 	conf.setStrings("columns", columns);
 	conf.setInt("dimension", dimension);
 
-	// Setting the job
-	Job job = Job.getInstance(conf, "ProjetMapReduce");
 	String centroidsFile = centroidFolder + "/" + CENTROID_FILE_NAME;
 	URI centroidsURI = new URI(centroidsFile + "#" + CENTROID_FILE_NAME);
-	job.addCacheFile(centroidsURI);
-	
-	setJob(job);
-	
-	FileInputFormat.addInputPath(job, new Path(input));
-	FileOutputFormat.setOutputPath(job, new Path(outputFolder));
 
 	FileSystem fs = FileSystem.get(conf);
-	
-	// Creating the cache file!
-	fs.createNewFile(new Path(centroidsFile));
 
-	// Writing the first centroids in the cache file
+	// Creating the cache files!
+	fs.createNewFile(new Path(centroidsFile));
+			
+	// Writing the first centroids in the centroids cache file
 	FSDataInputStream inputStream = fs.open(new Path(input));
 	BufferedReader br = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
 	List<List<Double>> centroids = getFirstCentroids(br, Parser.parseToInteger(columns), clusterNumber);
 
 	FSDataOutputStream outputStream = fs.create(new Path(centroidsFile));
-	writeCentroids(centroids, new OutputStreamWriter(outputStream));
+	OutputStreamWriter outputCentroids = new OutputStreamWriter(outputStream);
+	Centroids.writeCentroids(centroids, outputCentroids);
+	outputCentroids.close();
 
-	// Running the job
-	System.exit(job.waitForCompletion(true) ? 0 : 1);
+	BufferedReader readerNewCentroids;
+	String newCentroidsFile, currentOutput;
+	
+	while(iteration < iterationsNumber){	    
+	    // Setting the job
+	    Job job = Job.getInstance(conf, "ProjetMapReduce");
+	    job.addCacheFile(centroidsURI);
+	    
+	    setJob(job);
+	    
+	    FileInputFormat.addInputPath(job, new Path(input));
+	    currentOutput = outputFolder + "-it-" + iteration;
+	    FileOutputFormat.setOutputPath(job, new Path(currentOutput));	    	    	    
+	    
+	    // Running the job
+	    job.waitForCompletion(true);
+
+	    newCentroidsFile = currentOutput + "/" + NEW_CENTROID_FILE_NAME;	    
+	    centroidsURI = new URI(newCentroidsFile);
+	    
+	    iteration++;
+	}
 
     }
 
@@ -114,38 +131,7 @@ public class ClusteringKMeans {
 	
 	return res;
     }
-
-    /**
-     * Writes the centroids given in the output,
-     * separator for coordinates is "," and separator between
-     * centroids is "\n".
-     */
-    private static void writeCentroids(List<List<Double>> centroids, OutputStreamWriter output) throws IOException{
-	boolean firstCoord = true;
-	boolean firstLine = true;
-	
-	for(List<Double> centroid : centroids){
-	    if(firstLine)
-		firstLine = false;
-	    else
-		output.write("\n");
-
-	    firstCoord = true;
-	    
-	    for(Double coordinate: centroid){
-		if(firstCoord)
-		    firstCoord = false;
-		else
-		    output.write(",");
-
-		output.write(coordinate.toString());
-	    }
-	}
-
-	output.flush();
-	output.close();
-    }
-
+    
     private static void setJob(Job job){
 	job.setNumReduceTasks(1);
 	job.setJarByClass(ClusteringKMeans.class);
@@ -153,9 +139,10 @@ public class ClusteringKMeans {
 	job.setMapOutputKeyClass(IntWritable.class);
 	job.setMapOutputValueClass(Text.class);
 	job.setReducerClass(ClusteringKMeansReducer.class);
-	job.setOutputKeyClass(Text.class);
-	job.setOutputValueClass(IntWritable.class);
-	job.setOutputFormatClass(TextOutputFormat.class);
+
+	MultipleOutputs.addNamedOutput(job, "clustering", TextOutputFormat.class, Text.class, IntWritable.class);
+	MultipleOutputs.addNamedOutput(job, "newCentroids", TextOutputFormat.class, NullWritable.class, Text.class);
+	
 	job.setInputFormatClass(TextInputFormat.class);
     }
 }

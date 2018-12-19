@@ -1,43 +1,82 @@
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Stream;
 
 public class Centroids{
+    private static final String SPLITTER_COORD = ",";
+    private static final String SPLITTER_CENTROIDS = "\n";
     
     /**
-     * Among centroids, searches the nearest to 
-     * the vector given
+     * Writes the centroids given in the output,
+     * separator for coordinates is "," and separator between
+     * centroids is "\n".
      */
-    public static int searchNearestCentroid(List<Double> vector, int clusterNumber, List<List<Double>> centroids){
-	int indexNearest = 0;
-	
-	Double diffMin = norm_difference(centroids.get(0), vector);
-	
-	for(int i = 0; i < clusterNumber; i++){
-	    List<Double> centroid = centroids.get(i);
-	    
-	    Double diff = norm_difference(centroid, vector);
-	    if(diff < diffMin){
-		diffMin = diff;
-		indexNearest = i;
+    public static void writeCentroids(List<List<Double>> centroids, OutputStreamWriter output) throws IOException{
+	boolean firstLine = true;
+	for(List<Double> centroid : centroids){
+	    if(firstLine)
+		firstLine = false;
+	    else{
+		output.write(SPLITTER_CENTROIDS);
+		output.flush();
 	    }
+	    
+	    writeCentroid(centroid, output);
 	}
-	
-	return indexNearest;
     }
     
-    /**
-     * Computes the difference in the norms of
-     * the two vectors given 
-     */
-    private static Double norm_difference(List<Double> vector1, List<Double> vector2){
-	Double res = 0.;
-	
-	// No need to check the dimensions of the vectors,
-	// it's assumed that they're correct
-	
-	for(int i = 0; i < vector1.size(); i++){
-	    res += Math.pow(vector1.get(i) - vector2.get(i), 2.);
+    public static void writeCentroid(List<Double> centroid, OutputStreamWriter output) throws IOException{        
+	output.write(centroidToString(centroid));
+	output.flush();
+    }
+
+    public static String centroidToString(List<Double> centroid){
+	String res = "";
+	boolean firstCoord = true;
+		
+	for(Double coordinate: centroid){
+	    if(firstCoord)
+		firstCoord = false;
+	    else
+		res += SPLITTER_COORD;
+	    
+	    res += coordinate.toString();
 	}
 	
-	return Math.sqrt(res);
+	return res;
+	
+    }
+
+
+    public static List<List<Double>> readCentroids(BufferedReader reader) throws IOException{
+	Stream<String> lines = reader.lines();
+	Iterator<String> iterator = lines.iterator();
+	
+	List<List<Double>> centroids = new ArrayList<List<Double>>();
+
+	while(iterator.hasNext()){	    
+	    List<Double> centroid = new ArrayList<Double>();
+	    
+	    String line = iterator.next();
+	    String tokens[] = line.split(",");
+
+	    for(String token : tokens)
+		centroid.add(Double.parseDouble(token));
+
+	    centroids.add(centroid);
+	}
+
+	return centroids;
+
+    }
+
+    public static void moveCentroids(BufferedReader source, OutputStreamWriter destination) throws IOException{
+	List<List<Double>> centroids = readCentroids(source);
+	writeCentroids(centroids, destination);
     }
 }
