@@ -57,19 +57,14 @@ public class SparkClusteringKMeans {
 
     public static String[] validLine(String s, int[] columns){
 	String tokens[] = s.toString().split(",");
-	//	System.out.println(s);
-	//System.out.println(columns[0] + " " + columns[1]);
 	
 	for(int column : columns){
 	    // Checking if the line does have floats in
 	    // all the columns we are going to use
 	    if(tokens.length < column){
-		//			System.out.println("tokens.length < column");
 		return new String[0];
-
  	    }
 	    if(!tokens[column].matches("-?\\d+(\\.\\d+)?")){
-		// 				System.out.println("!matches " + column + tokens[column]);
 		return new String[0];
 	    }
 	}
@@ -83,13 +78,13 @@ public class SparkClusteringKMeans {
     public static void main(String[] args) {
 	String input = args[0];
 	String output = args[1];
-	int clusterNumber = Integer.parseInt(args[2]);
-	int dimension = args.length - 3;
-	int columns[] = new int[dimension];
-	int iterationNumber = 1;
+	final int clusterNumber = Integer.parseInt(args[2]);
+	final int dimension = args.length - 4;
+	final int columns[] = new int[dimension];
+	final int iterationNumber = Integer.parseInt(args[3]);
 	
 	for (int i = 0; i < dimension; i++) {
-	    columns[i] = Integer.parseInt(args[i + 3]);
+	    columns[i] = Integer.parseInt(args[i + 4]);
 	}
 	
 	// Create a SparkContext to initialize
@@ -118,23 +113,66 @@ public class SparkClusteringKMeans {
 		
 	
 	// Taking the text's clusterNumber first lines as centroids
-	List<List<Double>> centroids = cleanTextFile
+	List<List<Double>> centroids =
+	    cleanTextFile
 	    .map(s -> convertToVector(s, dimension, columns))
 	    .take(clusterNumber);
 
-	for(List<Double> centroid: centroids){
+	/*	for(List<Double> centroid: centroids){
 	    String s = "";
 	    for(Double coord : centroid)
 		s += coord + " ";
-	    System.out.println(s);
-	}
-		
-	// Converting the data to JavaRDDPair<Vector, String>
-	JavaRDD<String> points =
-	    cleanTextFile
-	    .map(s -> s + "," + searchNearestCentroid(convertToVector(s, dimension, columns), clusterNumber, centroids));
-		
-	points.saveAsTextFile(output);
-    }
+		}*/
 
+	JavaRDD<String> dataSource = cleanTextFile;
+	JavaPairRDD<Integer, String> points = null;
+
+	System.out.println("Allez, je vais le faire " + iterationNumber + " fois ! ");
+
+	for(int i = 0; i < iterationNumber; i++){
+	    System.out.println("Et de " + (i + 1) +" ! ");
+	    final List<List<Double>> currentCentroids = new ArrayList<List<Double>>(centroids);
+	    points =
+		dataSource
+		.mapToPair(s ->
+			   {
+			       Integer nearest = searchNearestCentroid(convertToVector(s, dimension, columns), clusterNumber, currentCentroids);
+			       return new Tuple2<Integer, String>(nearest, s + "," + nearest);
+			   });	    
+	    
+	    JavaRDD<List<Double>> newCentroids =
+		points
+		.groupByKey()
+		.mapValues(lines -> {
+			int count = 0;
+			List<Double> newCentroid = new ArrayList<Double>();
+
+			for(int c = 0; c < dimension; c++)
+			    newCentroid.add(0.);
+			
+			for(String line: lines){
+			    List<Double> vector = convertToVector(line, dimension, columns);
+			    
+			    for(int c = 0; c < dimension; c++){
+				newCentroid.set(c, vector.get(c) + newCentroid.get(c));
+			    }
+			    count++;
+			}
+			
+			for(int c = 0; c < dimension; c++){
+			    newCentroid.set(c, newCentroid.get(c) / count);
+			}
+
+			return newCentroid;
+		    }).values();
+	    
+	    centroids = newCentroids.collect();
+	    System.out.println("Nous voilà maintenant avec " + centroids.size() + " centroïdes !");
+	    dataSource = points.values();
+	}
+	
+	points
+	    .values()
+	    .saveAsTextFile(output);	
+    }   
 }
